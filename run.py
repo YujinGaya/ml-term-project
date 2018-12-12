@@ -8,7 +8,7 @@ dataset = np.genfromtxt(
 	'data/data_train.csv',
 	dtype=float,
 	delimiter=',',
-	usecols=(0, 1, 2, 3, 8, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 22, 23),
+	usecols=(0, 1, 2, 3, 8, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 22),
 	converters={
 		0: convert,
 		18: convert
@@ -16,16 +16,38 @@ dataset = np.genfromtxt(
 	encoding='utf-8'
 )
 
-print("genfromtxt: end")
-print("shape: ", dataset.shape)
-print(dataset[0])
+categorical_data = np.genfromtxt(
+	'data/data_train.csv',
+	dtype=int,
+	delimiter=',',
+	usecols=(4, 5, 6, 7, 13, 17),
+	encoding='utf-8',
+	filling_values=-1
+)
 
-np.random.shuffle(dataset)
+y = np.genfromtxt(
+	'data/data_train.csv',
+	dtype=float,
+	delimiter=',',
+	usecols=(23),
+	encoding='utf-8'
+)
 
-# 🔥🔥🔥🔥🔥🔥🔥 조심하자!!
-X = dataset[:, 0:17]
-y = dataset[:, 17] / (500000 * np.ones(dataset.shape[0]))
-print(X, y)
+print(dataset.shape)
+print(categorical_data.shape)
+print(y.reshape(y.shape[0], 1).shape)
+
+dataset = np.hstack((
+	dataset,
+	np.eye(5)[categorical_data[:,0] - 2],
+	np.eye(94)[categorical_data[:,1] - 2],
+	np.eye(444)[categorical_data[:,2] - 2],
+	np.eye(872)[categorical_data[:,3] - 2],
+	np.eye(2)[categorical_data[:,4]],
+	np.eye(25)[categorical_data[:,5] + 1],
+	y.reshape(y.shape[0], 1)
+))
+
 # X = np.hstack((
 # 	X,
 # 	np.remainder(
@@ -38,6 +60,26 @@ print(X, y)
 # 	)[:, None]
 # ))
 
+print("genfromtxt: end")
+print("shape: ", dataset.shape)
+print(dataset[0])
+
+np.random.shuffle(dataset)
+
+# 🔥🔥🔥🔥🔥🔥🔥 조심하자!!
+X = dataset[:, 0:dataset.shape[1]-1]
+y = dataset[:, dataset.shape[1]-1] / (500000 * np.ones(dataset.shape[0]))
+print(X, y)
+
+# 🔥🔥🔥🔥🔥🔥🔥 TODO
+# month column을 만들기
+# day of the year 만들기
+# day of the week 만들기
+# 연도만 새 컬럼으로 빼기
+# one hot encoding
+# nan 채우기 most_frequenct, mean
+# outlier
+
 test_data_number = int(dataset.shape[0] * 0.1)
 train_data_number = dataset.shape[0] - test_data_number
 test_X, train_X = X[:test_data_number], X[test_data_number:]
@@ -45,50 +87,25 @@ test_y, train_y = y[:test_data_number], y[test_data_number:]
 
 print("dataset ready. Starting XGBoost...")
 
-param = {'max_depth': 2, 'eta': 1, 'silent': 1, 'objective': 'binary:logistic'}
-param['nthread'] = 4
-param['eval_metric'] = 'auc'
-
-features = [
-	'Contract Date', # 0
-	'Latitude', # 1
-	'Longitude', # 2
-	'Altitude', # 3
-	'Floor', # 4
-	'Angle', # 5
-	'Area', # 6
-	'No Parking Lot', # 7
-	'Area Parking Lot', # 8
-	'Management Fee', # 9
-	'No Households', # 10
-	'Age', # 11
-	'Completion Date', # 12
-	'Built Year', # 13
-	'No Schools', # 14
-	'No Bus Stations', # 15
-	'No Subway Stations' # 16
-]
-
-# train = xgb.DMatrix(train_X, label=train_y, feature_names=features)
-# test = xgb.DMatrix(test_X, label=test_y, feature_names=features)
-
 train = xgb.DMatrix(train_X, label=train_y)
 test = xgb.DMatrix(test_X, label=test_y)
 
+param = {'max_depth': 4, 'eta': 1, 'silent': 1, 'objective': 'binary:logistic'}
+param['nthread'] = 4
+param['eval_metric'] = 'auc'
 
 evallist = [(test, 'eval'), (train, 'train')]
 
-bst = xgb.train(param, train, 100, evals=evallist)
+bst = xgb.train(param, train, 500, evals=evallist)
 bst.save_model('0001.model')
 
 
 train_y = train_y * (500000 * np.ones(train_data_number))
 print('train y is...\n', train_y)
-# train_y_hat = bst.predict(xgb.DMatrix(train_X, feature_names=features)) * (500000 * np.ones(train_data_number))
 train_y_hat = bst.predict(xgb.DMatrix(train_X)) * (500000 * np.ones(train_data_number))
 print('train_y_hat y is...\n', train_y_hat)
 
-print('>> test performance:',
+print('>> train performance:',
 	1 - (
 		np.linalg.norm(
 			(train_y_hat - train_y) / train_y,
@@ -100,7 +117,6 @@ print('>> test performance:',
 
 test_y = test_y * (500000 * np.ones(test_data_number))
 print('test y is...\n', test_y)
-# test_y_hat = bst.predict(xgb.DMatrix(test_X, feature_names=features)) * (500000 * np.ones(test_data_number))
 test_y_hat = bst.predict(xgb.DMatrix(test_X)) * (500000 * np.ones(test_data_number))
 print('test_y_hat y is...\n', test_y_hat)
 
@@ -115,12 +131,10 @@ print('>> test performance:',
 
 import matplotlib.pyplot as plt
 
-xgb.plot_importance(bst)
-xgb.plot_tree(bst, num_trees=0)
-xgb.plot_tree(bst, num_trees=1)
-xgb.plot_tree(bst, num_trees=2)
+# xgb.plot_importance(bst)
+# xgb.plot_tree(bst)
 
-plt.show()
+# plt.show()
 
 # model = xgb.XGBClassifier(silent=False, gamma=1)
 # model.fit(train_X, train_y)
@@ -211,3 +225,24 @@ plt.show()
 # 		23: zeroIfNullI,    		# 14040
 # 	}
 # )
+
+
+# features = [
+# 	'Contract Date', # 0
+# 	'Latitude', # 1
+# 	'Longitude', # 2
+# 	'Altitude', # 3
+# 	'Floor', # 4
+# 	'Angle', # 5
+# 	'Area', # 6
+# 	'No Parking Lot', # 7
+# 	'Area Parking Lot', # 8
+# 	'Management Fee', # 9
+# 	'No Households', # 10
+# 	'Age', # 11
+# 	'Completion Date', # 12
+# 	'Built Year', # 13
+# 	'No Schools', # 14
+# 	'No Bus Stations', # 15
+# 	'No Subway Stations' # 16
+# ]
