@@ -151,7 +151,8 @@ def train_n_predict(train_X, train_y, test_X, test_y, X_test):
     evallist = [(test, 'eval'), (train, 'train')]
 
     bst = xgb.train(param, train, 1000, evals=evallist)
-    bst.save_model('0001.model')
+    bst.save_model('unique.model')
+    bst.dump_model('unique.dump.raw.txt')
 
     train_y_hat = bst.predict(xgb.DMatrix(train_X))
     validate_y_hat = bst.predict(xgb.DMatrix(test_X))
